@@ -27,3 +27,4 @@ navigator.mediaDevices.enumerateDevices();
 ```
 ![image](https://github.com/ramaking/web-poseNet/assets/58355046/a3a1604c-7e4a-4d6b-972a-1ab11e86985f)
 
+.
