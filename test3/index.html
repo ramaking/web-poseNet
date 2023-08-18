@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    body {
+      bottom: 0;
+      font-family: 'Titillium Web', sans-serif;
+      color: white;
+      left: 0;
+      margin: 0;
+      position: absolute;
+      right: 0;
+      top: 0;
+      transform-origin: 0px 0px;
+      overflow: hidden;
+    }
+
+    .container {
+      position: absolute;
+      background-color: #596e73;
+      width: 100%;
+      max-height: 100%;
+    }
+
+    .input_video {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+
+      &.selfie {
+        transform: scale(-1, 1);
+      }
+    }
+
+
+    .output_canvas {
+      max-width: 100%;
+      display: block;
+      position: relative;
+      left: 0;
+      top: 0;
+    }
+  </style>
+  <meta charset="utf-8">
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1632432234/camera_utils.js"
+    crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6.1629159505/control_utils.js"
+    crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js"
+    crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1635988162/pose.js" crossorigin="anonymous"></script>
+</head>
+
+<body>
+  <button id="btn_start">녹화시작</button>
+  <button id="btn_stop">녹화종료</button>
+  <button id="btn_motion_toggle">모션 인식 토글</button>
+  <button id="btn_capture">화면 캡쳐</button>
+  <button id="btn_capture_image_send">화면 캡쳐 이미지 전송</button>
+  <div class="container">
+    <video class="input_video"></video>
+    <canvas class="output_canvas" width="1280px" height="720px"></canvas>
+  </div>
+
+
+</body>
+
+</html>
+
+<script type="module">
+  let rec;
+  let blobs;
+  let desktopStream;
+  let voiceStream;
+  let captureImage = [];
+
+
+
+  const videoElement = document.getElementsByClassName('input_video')[0];
+  const canvasElement = document.getElementsByClassName('output_canvas')[0];
+  const canvasCtx = canvasElement.getContext('2d');
+
+  //canvas 녹화 시작/종료
+  const btn_start = document.querySelector("#btn_start");
+  const btn_stop = document.querySelector("#btn_stop");
+  const btn_capture = document.querySelector("#btn_capture");
+  let canvasCapture = () => {
+    // toDataURL()사용하여 png타입의 base64인코딩된 data url 형식의 문자열을 반환
+    var dataUrl = canvasElement.toDataURL('image/png')
+
+    canvasElement.toBlob((blob)=>{
+      var file = new File([blob], "blobtofile.png");
+      captureImage.push(file);
+    })
+
+    console.log(dataUrl);
+
+    // 다운로드 구현
+    const $anchor = document.createElement("a"); // 앵커 태그 생성
+    document.body.appendChild($anchor);
+    $anchor.style.display = "none";
+    $anchor.href = dataUrl; // 다운로드 경로 설정
+    $anchor.download = "test.png"; // 파일명 설정
+    $anchor.click(); // 앵커 클릭
+  }
+
+  btn_capture.onclick = canvasCapture;
+
+  //모션인식 토글
+  const btn_motion_toggle = document.querySelector("#btn_motion_toggle");
+  var motion_recognize = true;
+  let motion_recognize_toggle = () => {
+    motion_recognize = !motion_recognize;
+    console.log(motion_recognize);
+  }
+  btn_motion_toggle.onclick = motion_recognize_toggle;
+
+
+
+  let btn_capture_image_send = document.querySelector("#btn_capture_image_send");
+
+  let capture_image_send = () => {
+    var formData = new FormData();
+    let images = [];
+    for (let index = 0; index < captureImage.length; index++) {
+      formData.append("files", captureImage[index]);
+      
+    }
+
+    // fetch("http://localhost:5000/api/coaching/image/85", {
+      
+    fetch("https://join-it.site/api/coaching/image/86", {
+        method: "Post",
+        body: formData
+      })
+        .then((response) => console.log(response))
+        // .then((data) => console.log(data))
+  }
+  btn_capture_image_send.onclick = capture_image_send;
+
+
+
+
+
+  btn_start.onclick = async (event) => {
+    // 캔버스 영역 화면을 스트림으로 취득
+    desktopStream = canvasElement.captureStream();
+    voiceStream = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: true,
+    }); // 오디오스트림 생성
+
+    console.log(voiceStream.getAudioTracks());
+    const tracks = [
+      ...desktopStream.getVideoTracks(),
+      // ...voiceStream.getAudioStream()
+      ...mergeAudioStreams(desktopStream, voiceStream),
+    ];
+
+    let stream = new MediaStream(tracks);
+
+    blobs = [];
+
+
+    rec = new MediaRecorder(stream, { mimeType: "video/webm; codecs=vp9,opus" }); // mediaRecorder객체 생성
+    rec.ondataavailable = (e) => blobs.push(e.data);
+
+    rec.onstop = async () => {
+      let blob = new Blob(blobs, { type: "video/webm" });
+
+      let file = new File([blob], "test.webm");
+      var formData = new FormData();
+      formData.append("content", "Blob확인");
+      formData.append("videoRoute", file);
+
+      // fetch("http://localhost:5000/api/coaching/video/85", {
+      fetch("https://join-it.site/api/coaching/video/86", {
+        method: "Post",
+        body: formData
+      })
+        .then((response) => response.json())
+        .then((data) => console.log(data))
+
+
+      let url = window.URL.createObjectURL(blob);
+
+      // 다운로드 구현
+      const $anchor = document.createElement("a"); // 앵커 태그 생성
+      document.body.appendChild($anchor);
+      $anchor.style.display = "none";
+      $anchor.href = url; // 다운로드 경로 설정
+      $anchor.download = "test.webm"; // 파일명 설정
+      $anchor.click(); // 앵커 클릭
+
+      // download.href = url;
+      // download.download = "test.webm";
+      // download.style.display = "block";
+    };
+
+    rec.start(); // 녹화 시작
+  };
+
+  btn_stop.onclick = () => {
+    // 종료 버튼을 누른 경우
+
+    rec.stop(); // 화면녹화 종료 및 녹화된 영상 다운로드
+
+    desktopStream.getTracks().forEach((s) => s.stop());
+    voiceStream.getTracks().forEach((s) => s.stop());
+    desktopStream = null;
+    voiceStream = null;
+  };
+
+  const mergeAudioStreams = (desktopStream, voiceStream) => {
+    // 비디오, 오디오스트림 연결
+    const context = new AudioContext();
+    const destination = context.createMediaStreamDestination();
+    let hasDesktop = false;
+    let hasVoice = false;
+    if (desktopStream && desktopStream.getAudioTracks().length > 0) {
+      const source1 = context.createMediaStreamSource(desktopStream);
+      const desktopGain = context.createGain();
+      desktopGain.gain.value = 0.7;
+      source1.connect(desktopGain).connect(destination);
+      hasDesktop = true;
+    }
+
+    if (voiceStream && voiceStream.getAudioTracks().length > 0) {
+
+      const source2 = context.createMediaStreamSource(voiceStream);
+      const voiceGain = context.createGain();
+      voiceGain.gain.value = 0.7;
+      source2.connect(voiceGain).connect(destination);
+      hasVoice = true;
+    }
+
+    return hasDesktop || hasVoice ? destination.stream.getAudioTracks() : [];
+  };
+
+
+  // let posenet_keypoints = [0, 2, 5, 7, 8, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+
+  //반환된 결과 값 처리
+  function onResults(results) {
+
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    // Only overwrite existing pixels.
+    canvasCtx.globalCompositeOperation = 'source-in';
+    canvasCtx.fillStyle = '#00FF00';
+    canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+
+    // Only overwrite missing pixels.
+    canvasCtx.globalCompositeOperation = 'destination-atop';
+    canvasCtx.drawImage(
+      results.image, 0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.globalCompositeOperation = 'source-over';
+
+    if (motion_recognize) {
+      //선그리기
+      drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
+        { color: '#00FF00', lineWidth: 4 });
+
+      //점 그리기
+      drawLandmarks(canvasCtx, results.poseLandmarks,
+        { color: '#FF0000', lineWidth: 2 });
+    }
+
+    canvasCtx.restore();
+
+  }
+
+  //외부 포즈 추정 모델 리소스를 불러옴
+  const pose = new Pose({
+    locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1635988162/${file}`;
+    }
+  });
+
+  //환경 설정
+  pose.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    smoothSegmentation: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+
+  //이벤트 등록 
+  //결과가 반환되었을 때 onresults 함수 실행
+  pose.onResults(onResults);
+
+  //mediapipe 가 제공하는 camera 모듈 (기존 코드로도 대체 가능할 듯 녹화관련으로 이슈가 생길 수 있어서)
+  const camera = new Camera(videoElement, {
+    onFrame: async () => {
+      //동영상 이미지를 캡쳐해서 보냄
+      await pose.send({ image: videoElement });
+    },
+    width: 1280,
+    height: 720
+  });
+  camera.start();
+</script>
